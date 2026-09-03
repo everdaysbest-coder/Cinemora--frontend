@@ -111,9 +111,19 @@ export function useGeneration({ open, presetTitle, initialMode = 'image', defaul
       const jobId = submitted.job_id || submitted.id;
       setJob({ ...submitted, provider });
 
+      let consecutiveFailures = 0;
+      let totalAttempts = 0;
+      const MAX_ATTEMPTS = 90; // ~6 دقائق بحد أقصى (POLL_INTERVAL_MS الافتراضي 4 ثواني)
       const poll = async () => {
+        totalAttempts += 1;
+        if (totalAttempts > MAX_ATTEMPTS) {
+          setError('Video generation is taking too long. Please try again.');
+          setLoading(false);
+          return;
+        }
         try {
           const current = await getVideoJob(jobId);
+          consecutiveFailures = 0;
           setJob({ ...current, provider });
           const status = String(current.status || '').toLowerCase();
 
@@ -129,8 +139,14 @@ export function useGeneration({ open, presetTitle, initialMode = 'image', defaul
           }
           pollTimer.current = setTimeout(poll, POLL_INTERVAL_MS);
         } catch (e) {
-          setError('Lost connection while checking video status.');
-          setLoading(false);
+          consecutiveFailures += 1;
+          if (consecutiveFailures >= 5) {
+            setError('Lost connection while checking video status. Please try again.');
+            setLoading(false);
+          } else {
+            // انقطاع لحظي — نعيد المحاولة بدل ما نفشل فورًا
+            pollTimer.current = setTimeout(poll, POLL_INTERVAL_MS);
+          }
         }
       };
       pollTimer.current = setTimeout(poll, POLL_INTERVAL_MS);
